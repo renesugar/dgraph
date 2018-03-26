@@ -17,7 +17,6 @@
 package badger
 
 import (
-	"bytes"
 	"fmt"
 	"math/rand"
 	"os"
@@ -285,15 +284,9 @@ func (s *levelsController) compactBuildTables(
 	for ; it.Valid(); i++ {
 		timeStart := time.Now()
 		builder := table.NewTableBuilder()
-		var lastKey []byte
 		for ; it.Valid(); it.Next() {
-			// Ensure all versions of same key always goes to same sstable.
-			parsedKey := y.ParseKey(it.Key())
-			if !bytes.Equal(lastKey, parsedKey) {
-				lastKey = y.SafeCopy(lastKey, parsedKey)
-				if builder.ReachedCapacity(s.kv.opt.MaxTableSize) {
-					break
-				}
+			if builder.ReachedCapacity(s.kv.opt.MaxTableSize) {
+				break
 			}
 			y.Check(builder.Add(it.Key(), it.Value()))
 		}
@@ -662,13 +655,14 @@ func (s *levelsController) close() error {
 }
 
 // get returns the found value if any. If not found, we return nil.
-func (s *levelsController) get(key []byte) (y.ValueStruct, error) {
+func (s *levelsController) get(key []byte, maxVs y.ValueStruct) (y.ValueStruct, error) {
 	// It's important that we iterate the levels from 0 on upward.  The reason is, if we iterated
 	// in opposite order, or in parallel (naively calling all the h.RLock() in some order) we could
 	// read level L's tables post-compaction and level L+1's tables pre-compaction.  (If we do
 	// parallelize this, we will need to call the h.RLock() function by increasing order of level
 	// number.)
 
+	version := y.ParseTs(key)
 	for _, h := range s.levels {
 		vs, err := h.get(key) // Calls h.RLock() and h.RUnlock().
 		if err != nil {
@@ -677,9 +671,14 @@ func (s *levelsController) get(key []byte) (y.ValueStruct, error) {
 		if vs.Value == nil && vs.Meta == 0 {
 			continue
 		}
-		return vs, nil
+		if vs.Version == version {
+			return vs, nil
+		}
+		if maxVs.Version < vs.Version {
+			maxVs = vs
+		}
 	}
-	return y.ValueStruct{}, nil
+	return maxVs, nil
 }
 
 func appendIteratorsReversed(out []y.Iterator, th []*table.Table, reversed bool) []y.Iterator {
