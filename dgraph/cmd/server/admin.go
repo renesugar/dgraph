@@ -1,23 +1,14 @@
 /*
- * Copyright (C) 2017 Dgraph Labs, Inc. and Contributors
+ * Copyright 2017-2018 Dgraph Labs, Inc.
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * This file is available under the Apache License, Version 2.0,
+ * with the Commons Clause restriction.
  */
 
 package server
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io/ioutil"
@@ -40,7 +31,7 @@ func handlerInit(w http.ResponseWriter, r *http.Request) bool {
 	}
 
 	ip, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil || !net.ParseIP(ip).IsLoopback() {
+	if err != nil || (!ipInIPWhitelistRanges(ip) && !net.ParseIP(ip).IsLoopback()) {
 		x.SetStatus(w, x.ErrorUnauthorized, fmt.Sprintf("Request from IP: %v", ip))
 		return false
 	}
@@ -100,7 +91,7 @@ func memoryLimitPutHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if memoryMB < edgraph.MinAllottedMemory {
 		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprintf(w, "memory_mb must be at least %.0f\n", edgraph.MinAllottedMemory)
+		fmt.Fprintf(w, "lru_mb must be at least %.0f\n", edgraph.MinAllottedMemory)
 		return
 	}
 
@@ -118,4 +109,19 @@ func memoryLimitGetHandler(w http.ResponseWriter, r *http.Request) {
 	if _, err := fmt.Fprintln(w, memoryMB); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func ipInIPWhitelistRanges(ipString string) bool {
+	ip := net.ParseIP(ipString)
+
+	if ip == nil {
+		return false
+	}
+
+	for _, ipRange := range worker.Config.WhiteListedIPRanges {
+		if bytes.Compare(ip, ipRange.Lower) >= 0 && bytes.Compare(ip, ipRange.Upper) <= 0 {
+			return true
+		}
+	}
+	return false
 }

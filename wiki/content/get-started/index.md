@@ -24,7 +24,7 @@ You can see the accompanying [video here](https://www.youtube.com/watch?v=QIIdSp
 
 Dgraph can be installed from the install scripts, or run via Docker.
 
-{{% notice "note" %}}These instructions will install the latest release version.  To instead install our nightly build see [these instructions]({{< relref "deploy/index.md#nightly" >}}).{{% /notice %}}
+{{% notice "note" %}}These instructions will install the latest release version.  To instead install our nightly build see [these instructions](/deploy).{{% /notice %}}
 
 ### From Docker Image
 
@@ -59,10 +59,10 @@ looking at its output, which includes the version number.
 
 {{% notice "note" %}}Binaries for Windows are available from `v0.8.3`.{{% /notice %}}
 
-If you wish to install the binaries on Windows, you can get them from the [Github releases](https://github.com/dgraph-io/dgraph/releases), extract and install them manually. The file `dgraph-windows-amd64-v0.x.y.tar.gz` contains the dgraph binary.
+If you wish to install the binaries on Windows, you can get them from the [Github releases](https://github.com/dgraph-io/dgraph/releases), extract and install them manually. The file `dgraph-windows-amd64-v1.x.y.tar.gz` contains the dgraph binary.
 
 ## Step 2: Run Dgraph
-{{% notice "note" %}} This is a set up involving just one machine. For multi-server setup, go to [Deploy]({{< relref "deploy/index.md" >}}). {{% /notice %}}
+{{% notice "note" %}} This is a set up involving just one machine. For multi-server setup, go to [Deploy](/deploy). {{% /notice %}}
 
 ### Docker Compose
 
@@ -98,7 +98,7 @@ services:
       - 8080:8080
       - 9080:9080
     restart: on-failure
-    command: dgraph server --my=server:7080 --memory_mb=2048 --zero=zero:5080
+    command: dgraph server --my=server:7080 --lru_mb=2048 --zero=zero:5080
   ratel:
     image: dgraph/dgraph:latest
     volumes:
@@ -139,7 +139,7 @@ dgraph zero
 Run `dgraph server` to start Dgraph server.
 
 ```sh
-dgraph server --memory_mb 2048 --zero localhost:5080
+dgraph server --lru_mb 2048 --zero localhost:5080
 ```
 
 **Run Ratel**
@@ -150,25 +150,7 @@ Run 'dgraph-ratel' to start Dgraph UI. This can be used to do mutations and quer
 dgraph-ratel
 ```
 
-{{% notice "tip" %}}You need to set the estimated memory Dgraph server can take through `memory_mb` flag. This is just a hint to the Dgraph server and actual usage would be higher than this. It's recommended to set memory_mb to half the available RAM.{{% /notice %}}
-
-#### Windows
-
-
-**Run Dgraph zero**
-```sh
-./dgraph.exe zero
-```
-
-**Run Dgraph data server**
-
-```sh
-./dgraph.exe server --memory_mb 2048 --zero localhost:5080
-```
-
-```sh
-./dgraph-ratel.exe
-```
+{{% notice "tip" %}}You need to set the estimated memory Dgraph server can take through `lru_mb` flag. This is just a hint to the Dgraph server and actual usage would be higher than this. It's recommended to set lru_mb to one-third the available RAM.{{% /notice %}}
 
 ### Docker on Linux
 
@@ -180,7 +162,7 @@ mkdir -p /tmp/data
 docker run -it -p 5080:5080 -p 6080:6080 -p 8080:8080 -p 9080:9080 -p 8000:8000 -v /tmp/data:/dgraph --name diggy dgraph/dgraph dgraph zero
 
 # Run Dgraph Server
-docker exec -it diggy dgraph server --memory_mb 2048 --zero localhost:5080
+docker exec -it diggy dgraph server --lru_mb 2048 --zero localhost:5080
 
 # Run Dgraph Ratel
 docker exec -it diggy dgraph-ratel
@@ -201,7 +183,7 @@ docker create -v /dgraph --name data dgraph/dgraph
 Now if we run Dgraph container with `--volumes-from` flag and run Dgraph with the following command, then anything we write to /dgraph in Dgraph container will get written to /dgraph volume of datacontainer.
 ```sh
 docker run -it -p 5080:5080 -p 6080:6080 --volumes-from data --name diggy dgraph/dgraph dgraph zero
-docker exec -it diggy dgraph server --memory_mb 2048 --zero localhost:5080
+docker exec -it diggy dgraph server --lru_mb 2048 --zero localhost:5080
 
 # Run Dgraph Ratel
 docker exec -it diggy dgraph-ratel
@@ -211,7 +193,7 @@ docker exec -it diggy dgraph-ratel
 If you are using Dgraph v1.0.2 (or older) then the default ports are 7080, 8080 for zero, so when following instructions for different setup guides override zero port using `--port_offset`.
 
 ```sh
-dgraph zero --memory_mb=<typically half the RAM> --port_offset -2000
+dgraph zero --lru_mb=<typically one-third the RAM> --port_offset -2000
 ```
 Ratel's default port is 8081, so override it using -p 8000.
 
@@ -224,9 +206,9 @@ Ratel's default port is 8081, so override it using -p 8000.
 The mutations and queries below can either be run from the command line using `curl localhost:8080/query -XPOST -d $'...'` or by pasting everything between the two `'` into the running user interface on localhost.{{% /notice %}}
 
 ### Dataset
-The dataset is a movie graph, where and the graph nodes are entities of the type directors, actors, genres, or movies.  
+The dataset is a movie graph, where and the graph nodes are entities of the type directors, actors, genres, or movies.
 
-### Storing data in the graph 
+### Storing data in the graph
 Changing the data stored in Dgraph is a mutation.  The following mutation stores information about the first three releases of the the ''Star Wars'' series and one of the ''Star Trek'' movies.  Running this mutation, either through the UI or on the command line, will store the data in Dgraph.
 
 
@@ -289,7 +271,7 @@ curl localhost:8080/alter -XPOST -d $'
 ' | python -m json.tool | less
 ```
 
-### Get all movies 
+### Get all movies
 Run this query to get all the movies. The query works below all the movies have a starring edge
 
 ```sh
@@ -388,8 +370,8 @@ and queried that data back.
 - Go to [Clients]({{< relref "clients/index.md" >}}) to see how to communicate
 with Dgraph from your application.
 - Take the [Tour](https://tour.dgraph.io) for a guided tour of how to write queries in Dgraph.
-- A wider range of queries can also be found in the [Query Language]({{< relref "query-language/index.md" >}}) reference.
-- See [Deploy]({{< relref "deploy/index.md" >}}) if you wish to run Dgraph
+- A wider range of queries can also be found in the [Query Language](/query-language) reference.
+- See [Deploy](/deploy) if you wish to run Dgraph
   in a cluster.
 
 ## Need Help

@@ -1,18 +1,8 @@
 /*
- * Copyright (C) 2017 Dgraph Labs, Inc. and Contributors
+ * Copyright 2017-2018 Dgraph Labs, Inc.
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * This file is available under the Apache License, Version 2.0,
+ * with the Commons Clause restriction.
  */
 
 package posting
@@ -20,9 +10,9 @@ package posting
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"math"
 	"sort"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -31,13 +21,12 @@ import (
 	"github.com/dgraph-io/dgo/protos/api"
 	"github.com/dgraph-io/dgraph/protos/intern"
 	"github.com/dgraph-io/dgraph/x"
-	farm "github.com/dgryski/go-farm"
 )
 
 var (
 	ErrTsTooOld = x.Errorf("Transaction is too old")
 	txns        *transactions
-	txnMarks    *x.WaterMark // Used to find out till which index we can snapshot.
+	txnMarks    *x.WaterMark // Used to find out till what RAFT index we can snapshot entries.
 )
 
 func init() {
@@ -226,8 +215,10 @@ func (t *Txn) Fill(ctx *api.TxnContext) {
 	for i := t.nextKeyIdx; i < len(t.deltas); i++ {
 		d := t.deltas[i]
 		if d.checkConflict {
-			fp := farm.Fingerprint64(d.key)
-			ctx.Keys = append(ctx.Keys, strconv.FormatUint(fp, 36))
+			// Instead of taking a fingerprint of the keys, send the whole key to Zero. So, Zero can
+			// parse the key and check if that predicate is undergoing a move, hence avoiding #2338.
+			k := base64.StdEncoding.EncodeToString(d.key)
+			ctx.Keys = append(ctx.Keys, k)
 		}
 	}
 	t.nextKeyIdx = len(t.deltas)
@@ -402,6 +393,10 @@ func ReadPostingList(key []byte, it *badger.Iterator) (*List, error) {
 	// Iterates from highest Ts to lowest Ts
 	for it.Valid() {
 		item := it.Item()
+		if item.IsDeletedOrExpired() {
+			// Don't consider any more versions.
+			break
+		}
 		if !bytes.Equal(item.Key(), l.key) {
 			break
 		}
@@ -418,9 +413,11 @@ func ReadPostingList(key []byte, it *badger.Iterator) (*List, error) {
 				return nil, err
 			}
 			l.minTs = item.Version()
-			it.Next()
+			// No need to do Next here. The outer loop can take care of skipping more versions of
+			// the same key.
 			break
-		} else if item.UserMeta()&bitDeltaPosting > 0 {
+		}
+		if item.UserMeta()&bitDeltaPosting > 0 {
 			var pl intern.PostingList
 			x.Check(pl.Unmarshal(val))
 			for _, mpost := range pl.Postings {
@@ -431,6 +428,9 @@ func ReadPostingList(key []byte, it *badger.Iterator) (*List, error) {
 			}
 		} else {
 			x.Fatalf("unexpected meta: %d", item.UserMeta())
+		}
+		if item.DiscardEarlierVersions() {
+			break
 		}
 		it.Next()
 	}

@@ -1,18 +1,8 @@
 /*
- * Copyright (C) 2017 Dgraph Labs, Inc. and Contributors
+ * Copyright 2017-2018 Dgraph Labs, Inc.
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * This file is available under the Apache License, Version 2.0,
+ * with the Commons Clause restriction.
  */
 
 package server
@@ -28,9 +18,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dgraph-io/dgo/protos/api"
 	"github.com/dgraph-io/dgraph/edgraph"
 	"github.com/dgraph-io/dgraph/gql"
-	"github.com/dgraph-io/dgo/protos/api"
 	"github.com/dgraph-io/dgraph/query"
 	"github.com/dgraph-io/dgraph/worker"
 	"github.com/dgraph-io/dgraph/x"
@@ -175,11 +165,33 @@ func mutationHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	parseStart := time.Now()
-	mu, err := gql.ParseMutation(string(m))
-	if err != nil {
-		x.SetStatus(w, x.ErrorInvalidRequest, err.Error())
-		return
+
+	var mu *api.Mutation
+	if mType := r.Header.Get("X-Dgraph-MutationType"); mType == "json" {
+		// Parse JSON.
+		ms := make(map[string]*skipJSONUnmarshal)
+		err := json.Unmarshal(m, &ms)
+		if err != nil {
+			x.SetStatus(w, x.ErrorInvalidRequest, err.Error())
+			return
+		}
+
+		mu = &api.Mutation{}
+		if setJSON, ok := ms["set"]; ok && setJSON != nil {
+			mu.SetJson = setJSON.bs
+		}
+		if delJSON, ok := ms["delete"]; ok && delJSON != nil {
+			mu.DeleteJson = delJSON.bs
+		}
+	} else {
+		// Parse NQuads.
+		mu, err = gql.ParseMutation(string(m))
+		if err != nil {
+			x.SetStatus(w, x.ErrorInvalidRequest, err.Error())
+			return
+		}
 	}
+
 	parseEnd := time.Now()
 
 	// Maybe rename it so that default is CommitNow.
@@ -404,4 +416,14 @@ func alterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Write(js)
+}
+
+// skipJSONUnmarshal stores the raw bytes as is while JSON unmarshaling.
+type skipJSONUnmarshal struct {
+	bs []byte
+}
+
+func (sju *skipJSONUnmarshal) UnmarshalJSON(bs []byte) error {
+	sju.bs = bs
+	return nil
 }

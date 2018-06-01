@@ -19,12 +19,10 @@ If you're running more than five tables in a traditional relational database man
 While we absolutely believe in Dgraph it's important to remember it's still young. At this stage it's ideal for internal non-user facing projects as well as for projects that you've found impossible to realize in the past due to the complexity and computational cost imposed by classic table driven systems, endless joins, or the seemingly inescapable ''curse of dimensionality''.
 
 ### Why would I not use Dgraph?
-If you're looking for a stable, mature database, Dgraph wouldn't be the right fit for you. It is at an early stage, where a lot of functionality is still being worked on, and releases might not be backward compatible.
-
-Another thing is, if your data doesn't have graph structure, i.e., there's only one predicate, then any graph database might not be a good fit for you. A NoSQL datastore is best for key-value type storage.
+If your data doesn't have graph structure, i.e., there's only one predicate, then any graph database might not be a good fit for you. A NoSQL datastore is best for key-value type storage.
 
 ### Is Dgraph production ready?
-We recommend Dgraph to be used in production at companies. Minor releases at this stage might not be backward compatible; so we highly recommend using [frequent exports]({{< relref "deploy/index.md#export" >}}).
+We recommend Dgraph to be used in production at companies. Minor releases at this stage might not be backward compatible; so we highly recommend using [frequent exports](/deploy#export).
 
 ### Is Dgraph fast?
 Every other graph system that we've run it against, Dgraph has been at least a 10x factor faster. It only goes up from there. But, that's anecdotal observations.
@@ -34,9 +32,27 @@ Here are some actual benchmarks:
 * Dgraph against Neo4J – check [this blog post](https://open.dgraph.io/post/benchmark-neo4j/)
 * Dgraph against Cayley – check [this github repo](https://github.com/ankurayadav/graphdb-benchmarks#results-of-queries-benchmark) (credit to Ankur Yadav)
 
+## Dgraph License
+
 ### How is Dgraph Licensed?
 
-The server is licensed under [AGPL v3](https://www.gnu.org/licenses/agpl-3.0.html) and the clients (Go, Java, JS etc.) are licensed under [Apache 2](https://www.apache.org/licenses/LICENSE-2.0). More details about licensing can be found [here](https://github.com/dgraph-io/dgraph/blob/master/LICENSE.md), with an explanation of why we're doing it that way [here](https://blog.dgraph.io/post/licensing/).
+Dgraph is licensed under Apache v2.0 with a Commons Clause restriction. The full text of the license can be found [here](https://github.com/dgraph-io/dgraph/blob/master/LICENSE.md).
+
+### How does Commons Clause restriction affect me?
+
+The Commons Clause restriction allows you to do everything below:
+
+- Using Dgraph internally within your organization to support your own processing.
+- Build or sell a service on top of Dgraph, which adds substantial value to Dgraph. For e.g., building a proprietary recommendation engine service which uses Dgraph internally.
+- Use a specific Dgraph library in your application.
+
+The Commons Clause restriction prohibits you from:
+
+- Selling access to Dgraph as a software or in the cloud, without adding
+  substantial value to it.
+
+If you wish to provide Dgraph as a service, [talk to
+us](mailto:contact@dgraph.io).
 
 ## Internals
 

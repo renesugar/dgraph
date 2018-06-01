@@ -1,18 +1,8 @@
 /*
- * Copyright (C) 2017 Dgraph Labs, Inc. and Contributors
+ * Copyright 2017-2018 Dgraph Labs, Inc.
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * This file is available under the Apache License, Version 2.0,
+ * with the Commons Clause restriction.
  */
 
 package worker
@@ -277,6 +267,9 @@ func export(bdir string, readTs uint64) error {
 	defer txn.Discard()
 	iterOpts := badger.DefaultIteratorOptions
 	iterOpts.PrefetchValues = false
+	// We don't ask for all the versions. So, this would only return the 1 version for each key, iff
+	// that version is valid. So, we don't need to check in the iteration loop if the item is
+	// deleted or expired.
 	it := txn.NewIterator(iterOpts)
 	defer it.Close()
 	prefix := new(bytes.Buffer)
@@ -307,7 +300,7 @@ func export(bdir string, readTs uint64) error {
 			continue
 		}
 
-		if pk.Attr == "_predicate_" || pk.Attr == "_dummy_" {
+		if pk.Attr == "_predicate_" {
 			// Skip the UID mappings.
 			it.Seek(pk.SkipPredicate())
 			continue

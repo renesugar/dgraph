@@ -69,7 +69,52 @@ Run `go test` in the root folder.
     ok      github.com/dgraph-io/badger/skl 0.027s
     ok      github.com/dgraph-io/badger/table       0.478s
     ok      github.com/dgraph-io/badger/y   0.004s
-    
+
+## Doing a release
+
+* Create a branch called `release/v<x.y.z>` from master. For e.g. `release/v1.0.5`. Look at the
+   diff between the last release and master and make sure that `CHANGELOG.md` has all the changes
+   that went in. Also make sure that any new features/changes are added to the docs under
+   `wiki/content` to the relevant section.
+* Test any new features or bugfixes and then tag the final commit on the release branch like:
+
+  ```sh
+  git tag -s -a v1.0.5
+  ```
+
+* Push the release branch and the tagged commit.
+
+  ```sh
+  git push origin release/v<x.y.z>
+  git push origin v<x.y.z>
+  ```
+
+* Travis CI would run the `contrib/nightly/upload.sh` script when a new tag is pushed. This script
+  would create the binaries for `linux`, `darwin` and `windows` and also upload them to Github after
+  creating a new draft release. It would also publish a new docker image for the new release as well
+  as update the docker image with tag `latest` and upload them to docker hub.
+
+* Checkout the `master` branch and merge the tag to it and push it.
+
+  ```sh
+  git checkout master
+  git merge v<x.y.z>
+  git push origin master
+  ```
+
+* Once the draft release is published on Github by Travis, modify it to add the release notes. The release
+  notes would mostly be the same as changes for the current version in `CHANGELOG.md`. Finally publish the 
+  release and announce to users on community Slack.
+
+* To make sure that docs are added for the newly released version, add the version to
+   `wiki/scripts/build.sh`. It is also important for a release branch for the version to exist,
+   otherwise docs won't be built and published for it. SSH into the server serving the docs and pull
+   the latest version of `wiki/scripts/build.sh` from master branch and rerun it so that it can start
+   publishing docs for the latest version.
+
+* If any bugs were fixed with regards to query language or in the server then it is a good idea to
+  deploy the latest version on `play.dgraph.io`.
+
 ## Contributing
 
 ### Guidelines
@@ -97,11 +142,11 @@ Over years of writing big scalable systems, we are convinced that striving for s
 
 Every new source file must begin with a license header.
 
-Badger repo and files under `client/` and `x/` in Dgraph repo are licensed under the Apache license:
+Badger repo and the dgraph clients(dgo, dgraph-js, pydgraph and dgraph4j) are licensed under the Apache license:
 
 
     /*
-     * Copyright 2016-17 Dgraph Labs, Inc.
+     * Copyright 2016-2018 Dgraph Labs, Inc. and Contributors
      *
      * Licensed under the Apache License, Version 2.0 (the "License");
      * you may not use this file except in compliance with the License.
@@ -116,24 +161,15 @@ Badger repo and files under `client/` and `x/` in Dgraph repo are licensed under
      * limitations under the License.
      */
 
-All other code in the Dgraph repo is licenses under the GNU AGPL v3 license:
+All the code in the Dgraph repo is licensed under the Apache license with the Commons Clause
+restriction:
 
 
     /*
-     * Copyright (C) 2017 Dgraph Labs, Inc. and Contributors
+     * Copyright 2017-2018 Dgraph Labs, Inc. and Contributors
      *
-     * This program is free software: you can redistribute it and/or modify
-     * it under the terms of the GNU Affero General Public License as published by
-     * the Free Software Foundation, either version 3 of the License, or
-     * (at your option) any later version.
-     *
-     * This program is distributed in the hope that it will be useful,
-     * but WITHOUT ANY WARRANTY; without even the implied warranty of
-     * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-     * GNU Affero General Public License for more details.
-     *
-     * You should have received a copy of the GNU Affero General Public License
-     * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+     * This file is available under the Apache License, Version 2.0,
+     * with the Commons Clause restriction.
      */
 
 ### Signed Commits

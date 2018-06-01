@@ -194,12 +194,13 @@ message KeyValues {
 }
 
 message Proposal {
-	uint32 id = 1;
+	uint32 deprecated_id = 1; // delete this field in later versions. Its for backward compatibility.
 	Mutations mutations = 2;
 	api.TxnContext txn_context = 3;
 	repeated KV kv = 4;
 	MembershipState state = 5;
 	string clean_predicate = 6; // Delete the predicate which was moved to other group.
+	string key = 7;
 }
 
 message KVS {
@@ -361,10 +362,15 @@ message TxnTimestamps {
 	repeated uint64 ts = 1;
 }
 
+message PeerResponse {
+	bool status = 1;
+}
+
 service Raft {
 	rpc Echo (api.Payload)        returns (api.Payload) {}
 	rpc RaftMessage (api.Payload) returns (api.Payload) {}
 	rpc JoinCluster (RaftContext) returns (api.Payload) {}
+	rpc IsPeer (RaftContext)      returns (PeerResponse) {}
 }
 
 service Zero {
@@ -388,7 +394,7 @@ service Worker {
 	rpc MinTxnTs (api.Payload)                    returns (Num) {}
 
 	rpc Export (ExportPayload)              returns (ExportPayload) {}
-	rpc ReceivePredicate(stream KV)         returns (api.Payload) {}
+	rpc ReceivePredicate(stream KVS)         returns (api.Payload) {}
 	rpc MovePredicate(MovePredicatePayload) returns (api.Payload) {}
 }
 

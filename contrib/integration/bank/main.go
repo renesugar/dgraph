@@ -1,3 +1,10 @@
+/*
+ * Copyright 2017-2018 Dgraph Labs, Inc.
+ *
+ * This file is available under the Apache License, Version 2.0,
+ * with the Commons Clause restriction.
+ */
+
 package main
 
 import (
@@ -14,8 +21,8 @@ import (
 	"time"
 
 	"github.com/dgraph-io/dgo"
-	"github.com/dgraph-io/dgo/x"
 	"github.com/dgraph-io/dgo/protos/api"
+	"github.com/dgraph-io/dgo/x"
 	"google.golang.org/grpc"
 )
 
@@ -168,7 +175,7 @@ func (s *State) loop(wg *sync.WaitGroup) {
 func main() {
 	flag.Parse()
 
-	conn, err := grpc.Dial("localhost:9081", grpc.WithInsecure())
+	conn, err := grpc.Dial("localhost:9080", grpc.WithInsecure())
 	if err != nil {
 		log.Fatal(err)
 	}

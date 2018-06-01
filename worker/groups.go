@@ -1,18 +1,8 @@
 /*
- * Copyright (C) 2017 Dgraph Labs, Inc. and Contributors
+ * Copyright 2016-2018 Dgraph Labs, Inc.
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * This file is available under the Apache License, Version 2.0,
+ * with the Commons Clause restriction.
  */
 
 package worker
@@ -22,6 +12,8 @@ import (
 	"math"
 	"sync/atomic"
 	"time"
+
+	"google.golang.org/grpc"
 
 	"golang.org/x/net/context"
 
@@ -93,16 +85,20 @@ func StartRaftNodes(walStore *badger.ManagedDB, bindall bool) {
 	var connState *intern.ConnectionState
 	m := &intern.Member{Id: Config.RaftId, Addr: Config.MyAddr}
 	delay := 50 * time.Millisecond
-	for i := 0; i < 9; i++ { // Generous number of attempts.
-		var err error
+	maxHalfDelay := 15 * time.Second
+	var err error
+	for { // Keep on retrying. See: https://github.com/dgraph-io/dgraph/issues/2289
 		connState, err = zc.Connect(gr.ctx, m)
-		if err == nil {
+		if err == nil || grpc.ErrorDesc(err) == x.ErrReuseRemovedId.Error() {
 			break
 		}
 		x.Printf("Error while connecting with group zero: %v", err)
 		time.Sleep(delay)
-		delay *= 2
+		if delay <= maxHalfDelay {
+			delay *= 2
+		}
 	}
+	x.CheckfNoTrace(err)
 	if connState.GetMember() == nil || connState.GetState() == nil {
 		x.Fatalf("Unable to join cluster via dgraphzero")
 	}
@@ -218,6 +214,9 @@ func MaxLeaseId() uint64 {
 	g := groups()
 	g.RLock()
 	defer g.RUnlock()
+	if g.state == nil {
+		return 0
+	}
 	return g.state.MaxLeaseId
 }
 
@@ -241,7 +240,10 @@ func (g *groupi) applyState(state *intern.MembershipState) {
 	x.AssertTrue(state != nil)
 	g.Lock()
 	defer g.Unlock()
-	if g.state != nil && g.state.Counter >= state.Counter {
+	// We don't update state if we get any old state. Counter stores the raftindex of
+	// last update. For leader changes at zero since we don't propose, state can get
+	// updated at same counter value. So ignore only if counter is less.
+	if g.state != nil && g.state.Counter > state.Counter {
 		return
 	}
 
@@ -304,6 +306,14 @@ func (g *groupi) BelongsTo(key string) uint32 {
 	return 0
 }
 
+func (g *groupi) ServesTabletRW(key string) bool {
+	tablet := g.Tablet(key)
+	if tablet != nil && !tablet.ReadOnly && tablet.GroupId == groups().groupId() {
+		return true
+	}
+	return false
+}
+
 func (g *groupi) ServesTablet(key string) bool {
 	tablet := g.Tablet(key)
 	if tablet != nil && tablet.GroupId == groups().groupId() {
@@ -349,6 +359,9 @@ func (g *groupi) Tablet(key string) *intern.Tablet {
 func (g *groupi) HasMeInState() bool {
 	g.RLock()
 	defer g.RUnlock()
+	if g.state == nil {
+		return false
+	}
 
 	group, has := g.state.Groups[g.groupId()]
 	if !has {
@@ -362,6 +375,10 @@ func (g *groupi) HasMeInState() bool {
 func (g *groupi) AnyTwoServers(gid uint32) []string {
 	g.RLock()
 	defer g.RUnlock()
+
+	if g.state == nil {
+		return []string{}
+	}
 	group, has := g.state.Groups[gid]
 	if !has {
 		return []string{}
@@ -381,6 +398,9 @@ func (g *groupi) members(gid uint32) map[uint64]*intern.Member {
 	g.RLock()
 	defer g.RUnlock()
 
+	if g.state == nil {
+		return nil
+	}
 	if gid == 0 {
 		return g.state.Zeros
 	}
@@ -436,6 +456,9 @@ func (g *groupi) Leader(gid uint32) *conn.Pool {
 func (g *groupi) KnownGroups() (gids []uint32) {
 	g.RLock()
 	defer g.RUnlock()
+	if g.state == nil {
+		return
+	}
 	for gid := range g.state.Groups {
 		gids = append(gids, gid)
 	}
@@ -646,11 +669,17 @@ func (g *groupi) proposeDelta(oracleDelta *intern.OracleDelta) {
 	if !g.Node.AmLeader() {
 		return
 	}
-	// TODO (pawan) - All servers open a stream with Zero and processDelta. Why do we still have to
-	// propose these updates then?
+
+	// Only the leader of a group proposes the commit proposal for a group after getting delta from
+	// Zero.
 	for startTs, commitTs := range oracleDelta.Commits {
+		// The leader might not have yet applied the mutation and hence may not have the txn in the
+		// map. Its ok we can just continue, processOracleDeltaStream checks the oracle map every
+		// minute and calls proposeDelta.
 		if posting.Txns().Get(startTs) == nil {
-			posting.Oracle().Done(startTs)
+			// Don't mark oracle as done here as then it would be deleted the entry from map and it
+			// won't be proposed to the group. This could eventually block snapshots from happening
+			// in a replicated cluster.
 			continue
 		}
 		tctx := &api.TxnContext{StartTs: startTs, CommitTs: commitTs}
@@ -658,7 +687,6 @@ func (g *groupi) proposeDelta(oracleDelta *intern.OracleDelta) {
 	}
 	for _, startTs := range oracleDelta.Aborts {
 		if posting.Txns().Get(startTs) == nil {
-			posting.Oracle().Done(startTs)
 			continue
 		}
 		tctx := &api.TxnContext{StartTs: startTs}
@@ -687,7 +715,7 @@ START:
 	pl := g.Leader(0)
 	// We should always have some connection to dgraphzero.
 	if pl == nil {
-		x.Printf("WARNING: We don't have address of any dgraphzero server.")
+		x.Printf("WARNING: We don't have address of any dgraphzero leader.")
 		time.Sleep(time.Second)
 		goto START
 	}

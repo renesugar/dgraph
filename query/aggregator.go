@@ -1,18 +1,8 @@
 /*
- * Copyright (C) 2017 Dgraph Labs, Inc. and Contributors
+ * Copyright 2017-2018 Dgraph Labs, Inc.
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * This file is available under the Apache License, Version 2.0,
+ * with the Commons Clause restriction.
  */
 
 package query
@@ -83,7 +73,14 @@ func compareValues(ag string, va, vb types.Val) (bool, error) {
 		}
 	}
 	isLess, err = types.Less(va, vb)
+	if err != nil {
+		return false, err
+	}
 	isMore, err := types.Less(vb, va)
+	if err != nil {
+		return false, err
+	}
+	isEqual, err := types.Equal(va, vb)
 	if err != nil {
 		return false, err
 	}
@@ -93,13 +90,13 @@ func compareValues(ag string, va, vb types.Val) (bool, error) {
 	case ">":
 		return isMore, nil
 	case "<=":
-		return isLess && !isMore, nil
+		return isLess || isEqual, nil
 	case ">=":
-		return isMore && !isLess, nil
+		return isMore || isEqual, nil
 	case "==":
-		return !isMore && !isLess, nil
+		return isEqual, nil
 	case "!=":
-		return isMore || isLess, nil
+		return !isEqual, nil
 	default:
 		return false, x.Errorf("Invalid compare function %v", ag)
 	}

@@ -1,18 +1,8 @@
 /*
- * Copyright (C) 2017 Dgraph Labs, Inc. and Contributors
+ * Copyright 2015-2018 Dgraph Labs, Inc.
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * This file is available under the Apache License, Version 2.0,
+ * with the Commons Clause restriction.
  */
 
 package posting
@@ -41,7 +31,7 @@ import (
 )
 
 var (
-	dummyPostingList []byte // Used for indexing.
+	emptyPostingList []byte // Used for indexing.
 	elog             trace.EventLog
 )
 
@@ -68,7 +58,7 @@ func init() {
 			Checksum: h.Sum(nil),
 		}
 		var err error
-		dummyPostingList, err = pl.Marshal()
+		emptyPostingList, err = pl.Marshal()
 		x.Check(err)
 	})
 	elog = trace.NewEventLog("Memory", "")
@@ -310,12 +300,14 @@ func CommitLists(commit func(key []byte) bool) {
 	close(workChan)
 	wg.Wait()
 
-	// Consider using sync in syncIfDirty instead of async.
-	// Hacky solution for now, ensures that everything is flushed to disk before we return.
+	// The following hack ensures that all the asynchrously run commits above would have been done
+	// before this completes. Badger now actually gets rid of keys, which are deleted. So, we can
+	// use the Delete function.
 	txn := pstore.NewTransactionAt(1, true)
 	defer txn.Discard()
-	// Code is written with assumption that nothing is deleted in dgraph, so don't
-	// use delete
-	txn.SetWithMeta(x.DataKey("dummy", 1), nil, BitEmptyPosting)
-	txn.CommitAt(1, nil)
+	x.Check(txn.Delete(x.DataKey("_dummy_", 1)))
+	// Nothing is being read, so there can't be an ErrConflict. This should go to disk.
+	if err := txn.CommitAt(1, nil); err != nil {
+		x.Printf("Commit unexpectedly failed with error: %v", err)
+	}
 }

@@ -1,18 +1,8 @@
 /*
- * Copyright (C) 2017 Dgraph Labs, Inc. and Contributors
+ * Copyright 2017-2018 Dgraph Labs, Inc.
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * This file is available under the Apache License, Version 2.0,
+ * with the Commons Clause restriction.
  */
 
 package worker
@@ -33,7 +23,7 @@ import (
 
 type task struct {
 	rid  uint64 // raft index corresponding to the task
-	pid  uint32 // proposal id corresponding to the task
+	pid  string // proposal id corresponding to the task
 	edge *intern.DirectedEdge
 }
 
@@ -123,7 +113,7 @@ func updateTxns(raftIndex uint64, startTs uint64) *posting.Txn {
 // applied to memory before we return.
 func (s *scheduler) schedule(proposal *intern.Proposal, index uint64) (err error) {
 	defer func() {
-		s.n.props.Done(proposal.Id, err)
+		s.n.props.Done(proposal.Key, err)
 	}()
 
 	if proposal.Mutations.DropAll {
@@ -139,15 +129,16 @@ func (s *scheduler) schedule(proposal *intern.Proposal, index uint64) (err error
 		return err
 	}
 
+	if proposal.Mutations.StartTs == 0 {
+		posting.TxnMarks().Done(index)
+		return errors.New("StartTs must be provided.")
+	}
+
+	startTs := proposal.Mutations.StartTs
 	if len(proposal.Mutations.Schema) > 0 {
 		if err = s.n.Applied.WaitForMark(s.n.ctx, index-1); err != nil {
 			posting.TxnMarks().Done(index)
 			return err
-		}
-		startTs := proposal.Mutations.StartTs
-		if startTs == 0 {
-			posting.TxnMarks().Done(index)
-			return errors.New("StartTs must be provided.")
 		}
 		for _, supdate := range proposal.Mutations.Schema {
 			// This is neceassry to ensure that there is no race between when we start reading
@@ -162,7 +153,7 @@ func (s *scheduler) schedule(proposal *intern.Proposal, index uint64) (err error
 				break
 			}
 			s.waitForConflictResolution(supdate.Predicate)
-			err = s.n.processSchemaMutations(proposal.Id, index, startTs, supdate)
+			err = s.n.processSchemaMutations(proposal.Key, index, startTs, supdate)
 			if err != nil {
 				break
 			}
@@ -187,7 +178,7 @@ func (s *scheduler) schedule(proposal *intern.Proposal, index uint64) (err error
 		}
 		if edge.Entity == 0 && bytes.Equal(edge.Value, []byte(x.Star)) {
 			// We should only have one edge drop in one mutation call.
-			ctx, _ := s.n.props.CtxAndTxn(proposal.Id)
+			ctx, _ := s.n.props.CtxAndTxn(proposal.Key)
 			if err = s.n.Applied.WaitForMark(ctx, index-1); err != nil {
 				posting.TxnMarks().Done(index)
 				return
@@ -205,12 +196,9 @@ func (s *scheduler) schedule(proposal *intern.Proposal, index uint64) (err error
 			schemaMap[edge.Attr] = posting.TypeID(edge)
 		}
 	}
-	if proposal.Mutations.StartTs == 0 {
-		return errors.New("StartTs must be provided.")
-	}
 
 	total := len(proposal.Mutations.Edges)
-	s.n.props.IncRef(proposal.Id, total)
+	s.n.props.IncRef(proposal.Key, total)
 	x.ActiveMutations.Add(int64(total))
 	for attr, storageType := range schemaMap {
 		if _, err := schema.State().TypeOf(attr); err != nil {
@@ -223,12 +211,12 @@ func (s *scheduler) schedule(proposal *intern.Proposal, index uint64) (err error
 	}
 
 	m := proposal.Mutations
-	pctx := s.n.props.pctx(proposal.Id)
+	pctx := s.n.props.pctx(proposal.Key)
 	pctx.txn = updateTxns(index, m.StartTs)
 	for _, edge := range m.Edges {
 		t := &task{
 			rid:  index,
-			pid:  proposal.Id,
+			pid:  proposal.Key,
 			edge: edge,
 		}
 		if s.register(t) {

@@ -1,17 +1,8 @@
 /*
- * Copyright (C) 2017 Dgraph Labs, Inc. and Contributors
+ * Copyright 2015-2018 Dgraph Labs, Inc.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * This file is available under the Apache License, Version 2.0,
+ * with the Commons Clause restriction.
  */
 
 package x
@@ -21,6 +12,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -70,7 +62,8 @@ const (
 
 var (
 	// Useful for running multiple servers on the same machine.
-	regExpHostName = regexp.MustCompile(ValidHostnameRegex)
+	regExpHostName    = regexp.MustCompile(ValidHostnameRegex)
+	ErrReuseRemovedId = errors.New("Reusing RAFT index of a removed node.")
 )
 
 // WhiteSpace Replacer removes spaces and tabs from a string.
@@ -150,6 +143,13 @@ func ParseRequest(w http.ResponseWriter, r *http.Request, data interface{}) bool
 		return false
 	}
 	return true
+}
+
+func Max(a, b uint64) uint64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 var Nilbyte []byte

@@ -253,7 +253,9 @@ build_docker_image() {
 	tar -xzf ${NIGHTLY_FILE} -C dgraph-build
 	echo -e "Building the docker image with tag: $DOCKER_TAG."
 	docker build -t dgraph/dgraph:$DOCKER_TAG -f $DGRAPH/contrib/nightly/Dockerfile .
-	if [[ $DOCKER_TAG == $LATEST_TAG ]]; then
+  # This script only runs on Travis for master or when a new tag is pushed. When a new tag is pushed
+  # we must tag the docker image with latest tag as well.
+  if [[ $DOCKER_TAG != "master" ]]; then
 		echo "Tagging docker image with latest tag"
 		docker tag dgraph/dgraph:$DOCKER_TAG dgraph/dgraph:latest
 	fi
@@ -266,7 +268,7 @@ upload_docker_image() {
 	echo "Pushing the image"
 	echo -e "Pushing image with tag $DOCKER_TAG"
 	docker push dgraph/dgraph:$DOCKER_TAG
-	if [[ $DOCKER_TAG == $LATEST_TAG ]]; then
+	if [[ $DOCKER_TAG != "master" ]]; then
 		echo -e "Pushing latest image"
 		docker push dgraph/dgraph:latest
 	fi

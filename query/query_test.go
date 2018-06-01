@@ -1,18 +1,8 @@
 /*
- * Copyright (C) 2017 Dgraph Labs, Inc. and Contributors
+ * Copyright 2015-2018 Dgraph Labs, Inc.
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * This file is available under the Apache License, Version 2.0,
+ * with the Commons Clause restriction.
  */
 
 package query
@@ -6054,7 +6044,9 @@ func TestSchemaBlock5(t *testing.T) {
 			Type:      "string",
 			Index:     true,
 			Tokenizer: []string{"term", "exact", "trigram"},
-			Count:     true}}
+			Count:     true,
+			Lang:      true,
+		}}
 	checkSchemaNodes(t, expected, actual)
 }
 
@@ -7621,7 +7613,7 @@ func TestMultipleValueFilter2(t *testing.T) {
 	}
 	`
 	js := processToFastJsonNoErr(t, query)
-	require.JSONEq(t, `{"data": {"me":[{"name":"Michonne","graduation":["1932-01-01T00:00:00Z"]}]}}`, js)
+	require.JSONEq(t, `{"data": {"me":[{"name":"Michonne","graduation":["1932-01-01T00:00:00Z"]},{"name":"Andrea","graduation":["1935-01-01T00:00:00Z","1933-01-01T00:00:00Z"]}]}}`, js)
 }
 
 func TestMultipleValueArray(t *testing.T) {

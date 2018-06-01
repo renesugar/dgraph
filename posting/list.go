@@ -1,18 +1,8 @@
 /*
- * Copyright (C) 2017 Dgraph Labs, Inc. and Contributors
+ * Copyright 2015-2018 Dgraph Labs, Inc.
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * This file is available under the Apache License, Version 2.0,
+ * with the Commons Clause restriction.
  */
 
 package posting
@@ -345,7 +335,23 @@ func (l *List) addMutation(ctx context.Context, txn *Txn, t *intern.DirectedEdge
 	hasPendingDelete := (l.markdeleteAll != txn.StartTs) &&
 		l.markdeleteAll > 0 && t.Op == intern.DirectedEdge_DEL &&
 		bytes.Equal(t.Value, []byte(x.Star))
-	doAbort := hasPendingDelete || txn.StartTs < l.commitTs
+	doAbort := false
+	if hasPendingDelete {
+		// commitOrAbort proposals are applied in goroutines and there is no
+		// fixed ordering, so do this check to ensure we don't reject a mutation
+		// which was applied on leader.
+		// Example: We do sp*, commit and then one more sp*. Even If the commit proposal
+		// was applied on leader before second sp*, that guarantee is not true on
+		// follower, since scheduler doesn't care about commitOrAbort proposals and second
+		// sp* can be applied in memory before the commitProposal.
+		if commitTs := Oracle().CommitTs(l.markdeleteAll); commitTs > 0 {
+			l.commitMutation(ctx, l.markdeleteAll, commitTs)
+		} else if Oracle().Aborted(l.markdeleteAll) {
+			l.abortTransaction(ctx, l.markdeleteAll)
+		} else {
+			doAbort = true
+		}
+	}
 
 	checkConflict := false
 
@@ -636,7 +642,7 @@ func (l *List) Length(readTs, afterUid uint64) int {
 func doAsyncWrite(commitTs uint64, key []byte, data []byte, meta byte, f func(error)) {
 	txn := pstore.NewTransactionAt(commitTs, true)
 	defer txn.Discard()
-	if err := txn.SetWithMeta(key, data, meta); err != nil {
+	if err := txn.SetWithDiscard(key, data, meta); err != nil {
 		f(err)
 	}
 	if err := txn.CommitAt(commitTs, f); err != nil {
@@ -808,7 +814,6 @@ func (l *List) syncIfDirty(delFromCache bool) (committed bool, err error) {
 			x.AssertTrue(atomic.LoadInt32(&l.deleteMe) == 1)
 			lcache.delete(l.key)
 		}
-		pstore.PurgeVersionsBelow(l.key, minTs)
 	}
 
 	doAsyncWrite(minTs, l.key, data, meta, f)

@@ -1,17 +1,8 @@
 /*
- * Copyright (C) 2017 Dgraph Labs, Inc. and Contributors
+ * Copyright 2016-2018 Dgraph Labs, Inc.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * This file is available under the Apache License, Version 2.0,
+ * with the Commons Clause restriction.
  */
 
 package x
@@ -250,6 +241,8 @@ func PredicatePrefix(predicate string) []byte {
 	return buf
 }
 
+// Parse would parse the key. ParsedKey does not reuse the key slice, so the key slice can change
+// without affecting the contents of ParsedKey.
 func Parse(key []byte) *ParsedKey {
 	p := &ParsedKey{}
 

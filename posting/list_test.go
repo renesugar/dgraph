@@ -1,18 +1,8 @@
 /*
- * Copyright (C) 2017 Dgraph Labs, Inc. and Contributors
+ * Copyright 2015-2018 Dgraph Labs, Inc.
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * This file is available under the Apache License, Version 2.0,
+ * with the Commons Clause restriction.
  */
 
 package posting
@@ -271,14 +261,16 @@ func TestAddMutation_DelRead(t *testing.T) {
 	require.EqualValues(t, 0, ol.Length(3, 0))
 
 	// Commit sp* only in oracle, don't apply to pl yet
-	Oracle().commits[1] = 5
+	Oracle().commits[3] = 5
 	defer func() {
-		delete(Oracle().commits, 1)
+		delete(Oracle().commits, 3)
 	}()
 
 	// This read should ignore sp*, since readts is 4 and it was committed at 5
 	require.EqualValues(t, 1, ol.Length(4, 0))
 	checkValue(t, ol, "newcars", 4)
+
+	require.EqualValues(t, 0, ol.Length(6, 0))
 }
 
 func TestAddMutation_jchiu2(t *testing.T) {

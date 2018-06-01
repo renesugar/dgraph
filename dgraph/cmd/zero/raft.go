@@ -1,18 +1,8 @@
 /*
- * Copyright (C) 2017 Dgraph Labs, Inc. and Contributors
+ * Copyright 2017-2018 Dgraph Labs, Inc.
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * This file is available under the Apache License, Version 2.0,
+ * with the Commons Clause restriction.
  */
 
 package zero
@@ -20,6 +10,7 @@ package zero
 import (
 	"encoding/binary"
 	"errors"
+	"log"
 	"math/rand"
 	"sync"
 	"time"
@@ -211,8 +202,10 @@ func (n *node) proposeAndWait(ctx context.Context, proposal *intern.ZeroProposal
 		return err
 	}
 
+	cctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
 	// Propose the change.
-	if err := n.Raft().Propose(ctx, data); err != nil {
+	if err := n.Raft().Propose(cctx, data); err != nil {
 		return x.Wrapf(err, "While proposing")
 	}
 
@@ -220,8 +213,8 @@ func (n *node) proposeAndWait(ctx context.Context, proposal *intern.ZeroProposal
 	select {
 	case err := <-che:
 		return err
-	case <-ctx.Done():
-		return ctx.Err()
+	case <-cctx.Done():
+		return cctx.Err()
 	}
 }
 
@@ -390,6 +383,18 @@ func (n *node) applyConfChange(e raftpb.Entry) {
 		n.Connect(rc.Id, rc.Addr)
 
 		m := &intern.Member{Id: rc.Id, Addr: rc.Addr, GroupId: 0}
+
+		for _, member := range n.server.membershipState().Removed {
+			// It is not recommended to reuse RAFT ids.
+			if member.GroupId == 0 && m.Id == member.Id {
+				n.DoneConfChange(cc.ID, x.ErrReuseRemovedId)
+				// Cancel configuration change.
+				cc.NodeID = raft.None
+				n.Raft().ApplyConfChange(cc)
+				return
+			}
+		}
+
 		n.server.storeZero(m)
 	}
 
@@ -401,8 +406,9 @@ func (n *node) applyConfChange(e raftpb.Entry) {
 
 func (n *node) triggerLeaderChange() {
 	n.server.triggerLeaderChange()
-	m := &intern.Member{Id: n.Id, Addr: n.RaftContext.Addr, Leader: n.AmLeader()}
-	go n.proposeAndWait(context.Background(), &intern.ZeroProposal{Member: m})
+	// We update leader information on each node without proposal. This
+	// function is called on all nodes on leader change.
+	n.server.updateZeroLeader()
 }
 
 func (n *node) initAndStartNode(wal *raftwal.Wal) error {
@@ -439,14 +445,16 @@ func (n *node) initAndStartNode(wal *raftwal.Wal) error {
 			time.Sleep(delay)
 			ctx, cancel := context.WithTimeout(n.ctx, time.Second)
 			defer cancel()
-			// JoinCluster can block idefinitely, raft ignores conf change proposal
+			// JoinCluster can block indefinitely, raft ignores conf change proposal
 			// if it has pending configuration.
 			_, err = c.JoinCluster(ctx, n.RaftContext)
 			if err == nil {
 				break
 			}
-			if grpc.ErrorDesc(err) == conn.ErrDuplicateRaftId.Error() {
-				x.Fatalf("Error while joining cluster %v", err)
+			errorDesc := grpc.ErrorDesc(err)
+			if errorDesc == conn.ErrDuplicateRaftId.Error() ||
+				errorDesc == x.ErrReuseRemovedId.Error() {
+				log.Fatalf("Error while joining cluster: %v", errorDesc)
 			}
 			x.Printf("Error while joining cluster %v\n", err)
 			delay *= 2
@@ -466,6 +474,22 @@ func (n *node) initAndStartNode(wal *raftwal.Wal) error {
 	go n.Run()
 	go n.BatchAndSendMessages()
 	return err
+}
+
+func (n *node) updateZeroMembershipPeriodically(closer *y.Closer) {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			n.server.updateZeroLeader()
+
+		case <-closer.HasBeenClosed():
+			closer.Done()
+			return
+		}
+	}
 }
 
 func (n *node) snapshotPeriodically(closer *y.Closer) {
@@ -513,10 +537,11 @@ func (n *node) Run() {
 	rcBytes, err := n.RaftContext.Marshal()
 	x.Check(err)
 
-	closer := y.NewCloser(2)
+	closer := y.NewCloser(3)
 	// snapshot can cause select loop to block while deleting entries, so run
 	// it in goroutine
 	go n.snapshotPeriodically(closer)
+	go n.updateZeroMembershipPeriodically(closer)
 	// We only stop runReadIndexLoop after the for loop below has finished interacting with it.
 	// That way we know sending to readStateCh will not deadlock.
 	defer closer.SignalAndWait()
@@ -570,8 +595,8 @@ func (n *node) Run() {
 			if rd.SoftState != nil {
 				if rd.RaftState == raft.StateLeader && !leader {
 					n.server.updateLeases()
-					leader = true
 				}
+				leader = rd.RaftState == raft.StateLeader
 				// Oracle stream would close the stream once it steps down as leader
 				// predicate move would cancel any in progress move on stepping down.
 				n.triggerLeaderChange()
